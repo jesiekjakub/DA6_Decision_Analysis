@@ -1,34 +1,43 @@
+"""Min-max normalizer that anchors U(0) = 0 and U(1) = 1."""
+
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 
+# Floor on the denominator (U(1) - U(0)) to keep the gradient finite when the
+# wrapped network briefly collapses to a constant during training.
+_DENOMINATOR_EPS: float = 1e-12
+
 
 class NormLayer(nn.Module):
-    """Min-max normalizer for the ANN-UTADIS comprehensive utility.
+    """Re-scale the wrapped module's output to satisfy UTADIS anchoring.
 
-    Rescales the inner method's output so that an all-zeros input maps to 0
-    and an all-ones input maps to 1. This enforces U(0) = 0 and U(1) = 1,
-    which is the standard UTADIS anchoring convention and makes the learned
-    thresholds directly interpretable on the [0, 1] scale.
+    Subtracts :math:`U(\\mathbf{0})` and divides by :math:`U(\\mathbf{1}) - U(\\mathbf{0})`,
+    so that the comprehensive utility starts at 0 and ends at 1. This makes
+    the learned class thresholds directly comparable across runs and gives
+    the marginal utility plots a natural axis.
 
-    Args:
-        method_instance: The inner module whose output should be normalized.
-        num_criteria: Number of criteria (dimension of the input).
+    The wrapped module is queried three times per forward pass — once with
+    the real batch, once with all-zeros, once with all-ones. Caching the
+    anchoring values would shave a small amount of compute but require
+    invalidation on every ``set_slope`` call, so it is left to the future.
     """
 
-    def __init__(self, method_instance: torch.nn.Module, num_criteria: int):
+    def __init__(self, method_instance: nn.Module, num_criteria: int) -> None:
         super().__init__()
         self.method_instance = method_instance
         self.num_criteria = num_criteria
 
-    def set_slope(self, slope: float):
+    def set_slope(self, slope: float) -> None:
         self.method_instance.set_slope(slope)
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        out = self.method_instance(input)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.method_instance(x)
 
-        zero_input = torch.zeros(self.num_criteria).view(1, self.num_criteria).to(out.device)
-        one_input = torch.ones(self.num_criteria).view(1, self.num_criteria).to(out.device)
+        zero_input = torch.zeros(1, self.num_criteria, device=out.device, dtype=x.dtype)
+        one_input = torch.ones(1, self.num_criteria, device=out.device, dtype=x.dtype)
         zero = self.method_instance(zero_input)
         one = self.method_instance(one_input)
 
-        return (out - zero) / (one - zero + 1e-12)
+        return (out - zero) / (one - zero + _DENOMINATOR_EPS)

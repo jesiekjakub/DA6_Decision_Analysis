@@ -1,64 +1,185 @@
-# Project 1 — UTA & AHP
+# UTA & AHP — Multi-Criteria Decision Analysis of European Countries
 
-Multi-Criteria Decision Analysis of European countries using the OECD Better Life Index.
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
+[![pandas](https://img.shields.io/badge/pandas-2.0+-150458?style=flat-square&logo=pandas&logoColor=white)](https://pandas.pydata.org)
+[![PuLP](https://img.shields.io/badge/PuLP-3.3+-2C2D72?style=flat-square)](https://github.com/coin-or/pulp)
+[![NumPy](https://img.shields.io/badge/NumPy-013243?style=flat-square&logo=numpy&logoColor=white)](https://numpy.org)
+[![Matplotlib](https://img.shields.io/badge/Matplotlib-65BCDC?style=flat-square)](https://matplotlib.org)
+[![uv](https://img.shields.io/badge/uv-de5d43?style=flat-square)](https://github.com/astral-sh/uv)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](../LICENSE)
 
-**Decision problem**: Selecting the best European country to live in from the perspective of a student based in Poznan, Poland.
+Multi-criteria ranking of 26 European countries on quality-of-life
+indicators sourced from the OECD Better Life Index, augmented with
+geographic distance from Poznań, Poland. Two value-function approaches are
+implemented end-to-end — **UTA** (preference disaggregation via piecewise
+linear value functions, solved as an LP / MILP with PuLP) and **AHP**
+(eigenvector method over pairwise judgments on Saaty's 1–9 scale). The two
+rankings are compared on the same dataset to study how the elicitation style
+shapes the result.
 
-**Dataset**: 26 European OECD members evaluated on 8 criteria (employment, earnings, health, satisfaction, work-life balance, air quality, distance).
+## 📊 Dataset
 
-## Quick Start
+- **Source**: OECD Better Life Index ([Kaggle mirror](https://www.kaggle.com/datasets/joebeachcapital/oecd-better-life-index)).
+- **Alternatives**: 26 European OECD members.
+- **Criteria** (8 total):
 
-```bash
-uv sync                # install dependencies
-uv run jupyter lab     # open notebooks
-```
+| Criterion | Type | Unit |
+|---|---|---|
+| Employment rate | gain | % |
+| Long-term unemployment rate | cost | % |
+| Personal earnings | gain | USD |
+| Life expectancy | gain | years |
+| Life satisfaction | gain | 0–10 |
+| Employees working very long hours | cost | % |
+| Air pollution | cost | µg/m³ PM2.5 |
+| Distance from Poznań | cost | km (great-circle) |
 
-**Start here**: Open [`reports/UTA_full_report.ipynb`](reports/UTA_full_report.ipynb) — the unified report covering the full dataset description, UTA 2.1 (inconsistency resolution), and UTA 2.2 (most discriminant value function).
+The distance column is computed by [`prepare_dataset.py`](src/prepare_dataset/prepare_dataset.py)
+from a small hand-curated `european_capitals.json`. Long-format OECD rows are
+pivoted to wide format after filtering to the `Total` inequality slice; NaNs
+are first attacked with `dropna` and fall back to median imputation only if
+that pushes the alternative count below the spec floor.
 
-## Project Structure
+## 🧠 Methodology
+
+### UTA — Utilités Additives
+
+Each criterion is divided into $\gamma = 4$ equal segments, giving $\gamma + 1 = 5$
+characteristic points $x_i^0, \dots, x_i^4$ that anchor a piecewise-linear
+marginal value function $u_i$. The comprehensive utility of an alternative is
+the additive sum $U(a) = \sum_i u_i(g_i(a))$, with interpolation between
+characteristic points expressed as a PuLP affine expression so the linear
+programming solver sees the whole problem natively. The constraint set is:
+
+- **C1 — Normalization:** $u_i(\alpha_i) = 0$, $\sum_i u_i(\beta_i) = 1$.
+- **C2 — Monotonicity:** $u_i(x_i^{j+1}) \ge u_i(x_i^j)$.
+- **C3 — Weight bounds:** $1/(2n) \le u_i(\beta_i) \le 1/2$.
+- **C4 — Preference satisfaction:** $U(a) \ge U(b) + \varepsilon$ for every elicited $a \succ b$.
+- **C5 — Anti-flatness:** each segment carries $\ge 15\%$ of the criterion weight; a binary disjunction forces $|u_i(x_i^1) - u_i(x_i^0)|$ and $|u_i(x_i^4) - u_i(x_i^3)|$ to differ by at least $25\%$ of the weight.
+
+Two analyses use this model:
+
+1. **Inconsistency resolution** ([`src/uta_inconsistencies/`](src/uta_inconsistencies/)) — a
+   MILP minimises $\sum_k v_k$ where $v_k \in \{0,1\}$ relaxes preference $k$
+   if and only if it is removed. A no-good cut is appended after each solve
+   so the next iteration returns a *different* minimal removal set. The
+   procedure terminates when the cut-augmented problem is infeasible.
+
+2. **Most-discriminant value function** ([`src/uta_discrimination/`](src/uta_discrimination/)) —
+   on the consistent preference subset, an LP maximises $\varepsilon$ subject
+   to $U(a) - U(b) \ge \varepsilon$. The result is the additive value
+   function that puts the greatest margin between every elicited pair.
+
+### AHP — Analytic Hierarchy Process
+
+The eight criteria are organised into three categories — Economic,
+Social/Health, Geography/Environment — and the DM provides pairwise
+comparisons on Saaty's 1–9 scale at every node of the resulting tree
+([`src/ahp/dm_matrices.py`](src/ahp/dm_matrices.py)). The Goal-level matrix
+carries a deliberate cycle (Economic ≈ 5 × Social, Social ≈ 2 × Geo, but
+Economic recorded as only 3 × Geo) that violates Saaty's
+consistency-ratio threshold and exercises the diagnostic in
+[`src/ahp/consistency.py`](src/ahp/consistency.py).
+
+Priorities are extracted as the principal eigenvector of each pairwise
+matrix; consistency is reported via $\lambda_{\max}$, $CI$, $CR$ against the
+tabulated Random Index for the matrix size. Alternative-level matrices are
+generated by mapping signed criterion differences through per-criterion
+threshold tables in [`src/ahp/thresholds.py`](src/ahp/thresholds.py) onto
+Saaty intensities. Global criterion weights multiply the goal-level priority
+by the within-category priority, and per-criterion local priorities of
+alternatives are summed under those global weights into a final score.
+
+## 📁 Project Structure
 
 ```
 Project 1 - UTA, AHP/
 ├── reports/
-│   ├── UTA_full_report.ipynb              # Unified report (dataset + UTA 2.1 + UTA 2.2)
-│   └── dataset_description.md             # Answers to all 13 dataset description questions
+│   ├── UTA_full_report.ipynb            # Unified report: dataset + UTA 2.1 + UTA 2.2
+│   ├── AHP_report.ipynb                 # AHP application end-to-end
+│   ├── UTA_AHP_comparison.ipynb         # Rank correlation across both methods
+│   └── dataset_description.md
 ├── data/
-│   ├── raw/
-│   │   └── kaggle_data.csv                # Raw OECD BLI dataset from Kaggle (long format)
-│   ├── processed/
-│   │   ├── dataset.csv                    # Final MCDA dataset (26 countries x 8 criteria)
-│   │   ├── criteria_metadata.csv          # Criteria types: gain/cost for each criterion
-│   │   └── european_capitals.json         # Capital coordinates (for distance calculation)
-│   ├── preferences/
-│   │   ├── preferences.csv                # 20 pairwise comparisons (DM preferential information)
-│   │   └── selected_consistent_subset.csv # Indices of removed preferences for consistency
-│   └── output/
-│       └── marginal_value_functions.png   # Generated plot of marginal value functions
+│   ├── raw/                             # User-supplied OECD CSV (gitignored)
+│   ├── processed/                       # dataset.csv, criteria_metadata.csv, european_capitals.json
+│   ├── preferences/                     # preferences.csv, selected_consistent_subset.csv
+│   └── output/                          # marginal_value_functions.png, ahp_ranking.csv
 ├── src/
-│   ├── common/                            # Shared utilities used across all modules
-│   │   ├── config.py                      # Project paths and UTA model constants
-│   │   ├── data_loading.py                # Dataset, preferences, and removal indices loading
-│   │   └── uta_core.py                    # Characteristic points, interpolation, constraints, solver
-│   ├── uta_inconsistencies/               # UTA 2.1: Inconsistency resolution
-│   │   ├── resolver.py                    # MILP for finding all minimal removal sets
-│   │   └── UTA_inconsistencies_resolving.ipynb  # Step-by-step report for task 2.1
-│   ├── uta_discrimination/                # UTA 2.2: Most discriminant value function
-│   │   ├── solver.py                      # LP maximizing epsilon (discrimination threshold)
-│   │   └── UTA_preference_model_solving.ipynb   # Step-by-step report for task 2.2
+│   ├── common/
+│   │   ├── config.py                    # Paths and the UtaConfig dataclass
+│   │   ├── data_loading.py              # Loaders with schema validation
+│   │   ├── exceptions.py                # MissingDataError, InconsistentDataError, SolverError
+│   │   ├── logging_utils.py             # get_logger factory
+│   │   └── uta_core.py                  # Characteristic points, interpolation, C1-C5 constraints, solver
+│   ├── uta_inconsistencies/
+│   │   ├── resolver.py                  # MILP for all minimal removal sets
+│   │   └── UTA_inconsistencies_resolving.ipynb
+│   ├── uta_discrimination/
+│   │   ├── solver.py                    # LP maximizing epsilon, plotting, ranking
+│   │   └── UTA_preference_model_solving.ipynb
+│   ├── ahp/
+│   │   ├── hierarchy_setup.py           # Categories, criteria, directions
+│   │   ├── dm_matrices.py               # DM pairwise judgments (Saaty 1-9)
+│   │   ├── thresholds.py                # diff-to-Saaty mapping tables
+│   │   ├── alternative_matrices.py      # Per-criterion alternative comparison matrices
+│   │   ├── weights.py                   # Eigenvector method, AhpWeightsResult, CR diagnostic
+│   │   ├── global_weights.py            # Hierarchical weight aggregation
+│   │   ├── scoring.py                   # Aggregated AHP scoring
+│   │   ├── consistency.py               # Most-inconsistent-judgment diagnostic
+│   │   └── run.py                       # End-to-end AHP CLI entry point
 │   ├── prepare_dataset/
-│   │   └── prepare_dataset.py             # Transforms raw OECD data into final dataset.csv
+│   │   └── prepare_dataset.py           # OECD long-format → wide MCDA dataset
 │   └── find_dominated/
-│       └── find_dominated.py              # Identifies all Pareto-dominated alternatives
-├── Instructions/
-│   ├── DA_Project_UTA_AHP.pdf             # Project requirements (UTA, AHP, grading)
-│   ├── DA_dataset_description.pdf         # Dataset description requirements and questions
-│   └── da-lec3-notes.pdf                  # Lecture notes on UTA method
+│       └── find_dominated.py            # Vectorised Pareto-dominance scan
 ├── pyproject.toml
 └── uv.lock
 ```
 
-## Completed Tasks
+## 🚀 Setup
 
-- **Dataset**: 26 European countries, 8 criteria, all 13 description questions answered
-- **UTA 2.1**: Inconsistency resolution — 20 pairwise comparisons with intentional Scandinavian cycle, 3 minimal removal sets found, Sweden > Norway removed
-- **UTA 2.2**: Most discriminant value function — epsilon maximized, all equations/variables listed, marginal value function plots, full ranking of 26 countries
+```bash
+uv sync                # install dependencies
+uv run jupyter lab     # open the report notebooks
+```
+
+To run the analyses directly from the command line:
+
+```bash
+cd src
+uv run python -m uta_inconsistencies.resolver     # task 2.1
+uv run python -m uta_discrimination.solver        # task 2.2 (depends on 2.1 output)
+uv run python -m ahp.run                          # AHP ranking
+uv run python -m find_dominated.find_dominated    # Pareto-dominance scan
+```
+
+`prepare_dataset.py` re-runs the ETL from a raw OECD CSV placed in
+[`data/raw/`](data/raw/); the processed dataset is already committed to
+[`data/processed/`](data/processed/).
+
+## 🏛️ Key Architecture Decisions
+
+- **UTA constraints are added through small named functions on a shared PuLP
+  problem object.** Both the inconsistency MILP and the discrimination LP
+  reuse `add_normalization_constraints`, `add_monotonicity_constraints`,
+  etc., so the two solvers stay in sync if the model evolves.
+- **Solver fallback: GLPK → CBC.** PuLP's `GLPK_CMD` is preferred (smaller
+  status output, slightly faster on these problems); if GLPK isn't installed
+  the model falls back to bundled CBC without any user-visible change.
+- **No-good cuts, not symmetry breakers.** Listing every minimal removal set
+  is done by appending `Σ v_k ≤ |S| − 1` after each solve. This forbids the
+  exact removal set without forbidding its supersets — the latter would
+  prune sets that are minimal in a different sense.
+- **`UtaConfig` dataclass + module-level aliases.** The numerical parameters
+  are grouped in a frozen dataclass so they can be passed explicitly when
+  needed; the same values are also re-exported as module-level constants for
+  the `from common.config import GAMMA` access pattern used in scripts.
+
+## 📚 References
+
+- *Assessing a Set of Additive Utility Functions for Multicriteria Decision-Making, the UTA Method* — Jacquet-Lagrèze, Siskos (1982). European Journal of Operational Research 10(2). [doi:10.1016/0377-2217(82)90155-2](https://doi.org/10.1016/0377-2217(82)90155-2)
+- *The Analytic Hierarchy Process* — Saaty (1980). McGraw-Hill.
+- *Decision Making with the Analytic Hierarchy Process* — Saaty (2008). International Journal of Services Sciences 1(1). [doi:10.1504/IJSSCI.2008.017590](https://doi.org/10.1504/IJSSCI.2008.017590)
+
+## 📝 License
+
+MIT — see [LICENSE](../LICENSE).

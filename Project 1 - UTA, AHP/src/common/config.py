@@ -1,27 +1,57 @@
-"""Project-wide constants and file paths."""
+"""Project-wide file paths and UTA model parameters.
 
-import pathlib
+The model constants are kept in :class:`UtaConfig` so they can be passed
+around explicitly when needed; the module level also re-exports them for the
+common ``from common.config import GAMMA`` access pattern used in scripts.
+"""
 
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-RAW_DIR = DATA_DIR / "raw"
-PROCESSED_DIR = DATA_DIR / "processed"
-PREFERENCES_DIR = DATA_DIR / "preferences"
-OUTPUT_DIR = DATA_DIR / "output"
+from __future__ import annotations
 
-DATASET_FILE = PROCESSED_DIR / "dataset.csv"
-METADATA_FILE = PROCESSED_DIR / "criteria_metadata.csv"
-PREFERENCES_FILE = PREFERENCES_DIR / "preferences.csv"
-SELECTED_SUBSET_FILE = PREFERENCES_DIR / "selected_consistent_subset.csv"
-CAPITALS_FILE = PROCESSED_DIR / "european_capitals.json"
+from dataclasses import dataclass
+from pathlib import Path
 
-GAMMA = 4  # segments per criterion, so gamma+1 characteristic points
+PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
+DATA_DIR: Path = PROJECT_ROOT / "data"
+RAW_DIR: Path = DATA_DIR / "raw"
+PROCESSED_DIR: Path = DATA_DIR / "processed"
+PREFERENCES_DIR: Path = DATA_DIR / "preferences"
+OUTPUT_DIR: Path = DATA_DIR / "output"
 
-# weight bounds from project spec
-WEIGHT_UB = 0.5      # u_i(beta_i) <= 0.5
-WEIGHT_LB = 0.0625   # u_i(beta_i) >= 1/(2n)
+DATASET_FILE: Path = PROCESSED_DIR / "dataset.csv"
+METADATA_FILE: Path = PROCESSED_DIR / "criteria_metadata.csv"
+PREFERENCES_FILE: Path = PREFERENCES_DIR / "preferences.csv"
+SELECTED_SUBSET_FILE: Path = PREFERENCES_DIR / "selected_consistent_subset.csv"
+CAPITALS_FILE: Path = PROCESSED_DIR / "european_capitals.json"
 
-DELTA = 0.001  # strict preference margin: U(a) >= U(b) + delta
 
-MIN_SEGMENT_SHARE = 0.15  # anti-flatness: each segment >= 15% of criterion weight
-NON_LINEARITY_THRESHOLD = 0.25  # min diff between first and last segment (fraction of weight)
+@dataclass(frozen=True)
+class UtaConfig:
+    """Numerical parameters of the UTA additive value-function model.
+
+    Bounds come from the project specification: a single criterion may carry
+    at most half of the total weight and at least 1/(2n) of it, where n is
+    the number of criteria. ``MIN_SEGMENT_SHARE`` and ``NON_LINEARITY_THRESHOLD``
+    together prevent degenerate piecewise-linear functions (flat segments and
+    near-linear shapes that don't reflect the DM's actual preferences).
+    """
+
+    gamma: int = 4
+    weight_ub: float = 0.5
+    weight_lb: float = 0.0625
+    delta: float = 1e-3
+    min_segment_share: float = 0.15
+    non_linearity_threshold: float = 0.25
+
+    @property
+    def num_characteristic_points(self) -> int:
+        return self.gamma + 1
+
+
+DEFAULT_CONFIG: UtaConfig = UtaConfig()
+
+GAMMA: int = DEFAULT_CONFIG.gamma
+WEIGHT_UB: float = DEFAULT_CONFIG.weight_ub
+WEIGHT_LB: float = DEFAULT_CONFIG.weight_lb
+DELTA: float = DEFAULT_CONFIG.delta
+MIN_SEGMENT_SHARE: float = DEFAULT_CONFIG.min_segment_share
+NON_LINEARITY_THRESHOLD: float = DEFAULT_CONFIG.non_linearity_threshold

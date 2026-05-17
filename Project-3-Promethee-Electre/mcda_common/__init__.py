@@ -1,0 +1,71 @@
+"""Shared building blocks for the PROMETHEE and ELECTRE Tri-B exercises."""
+
+from .electre import (
+    build_relation_dataframe,
+    calculate_comprehensive_concordance_matrix,
+    calculate_credibility_index,
+    calculate_marginal_concordance_index,
+    calculate_marginal_concordance_matrix,
+    calculate_marginal_discordance_index,
+    calculate_marginal_discordance_matrix,
+    calculate_optimistic_assigment,
+    calculate_optimistic_assignment,
+    calculate_outranking_relation_matrix,
+    calculate_pessimistic_assigment,
+    calculate_pessimistic_assignment,
+)
+from .io import load_boundary_profiles, load_dataset, load_preference_information
+from .promethee import (
+    calculate_comprehensive_preference_index,
+    calculate_marginal_preference_matrix,
+    calculate_negative_flow,
+    calculate_net_flow,
+    calculate_positive_flow,
+    create_complete_ranking,
+    create_partial_ranking,
+    difference_function,
+    marginal_preference_function,
+)
+from .types import CriterionType
+from .viz import (
+    display_ranking,
+    find_nodes_groups,
+    plot_marginal_preference_function,
+    plot_single_marginal_preference_function,
+    test_marginal_preference_function,
+    test_single_marginal_preference_function,
+)
+
+__all__ = [
+    "CriterionType",
+    "build_relation_dataframe",
+    "calculate_comprehensive_concordance_matrix",
+    "calculate_comprehensive_preference_index",
+    "calculate_credibility_index",
+    "calculate_marginal_concordance_index",
+    "calculate_marginal_concordance_matrix",
+    "calculate_marginal_discordance_index",
+    "calculate_marginal_discordance_matrix",
+    "calculate_marginal_preference_matrix",
+    "calculate_negative_flow",
+    "calculate_net_flow",
+    "calculate_optimistic_assigment",
+    "calculate_optimistic_assignment",
+    "calculate_outranking_relation_matrix",
+    "calculate_pessimistic_assigment",
+    "calculate_pessimistic_assignment",
+    "calculate_positive_flow",
+    "create_complete_ranking",
+    "create_partial_ranking",
+    "difference_function",
+    "display_ranking",
+    "find_nodes_groups",
+    "load_boundary_profiles",
+    "load_dataset",
+    "load_preference_information",
+    "marginal_preference_function",
+    "plot_marginal_preference_function",
+    "plot_single_marginal_preference_function",
+    "test_marginal_preference_function",
+    "test_single_marginal_preference_function",
+]

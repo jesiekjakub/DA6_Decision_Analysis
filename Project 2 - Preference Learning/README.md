@@ -1,99 +1,137 @@
-# Project 2 — Preference Learning
+# Preference Learning — Three Models, One Dataset
 
-Decision Analysis course, Project 2. A comparative study of three preference
-learning methods on the `lectures evaluation` dataset: a monotone-constrained
-gradient boosted tree, a fully interpretable neural MCDA model, and a
-conventional deep MLP. Everything lives in a single report notebook.
+[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.3+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)](https://pytorch.org)
+[![XGBoost](https://img.shields.io/badge/XGBoost-3.0+-008000?style=flat-square)](https://xgboost.readthedocs.io)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.8+-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
+[![SHAP](https://img.shields.io/badge/SHAP-0.51+-blueviolet?style=flat-square)](https://shap.readthedocs.io)
+[![uv](https://img.shields.io/badge/uv-de5d43?style=flat-square)](https://github.com/astral-sh/uv)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](../LICENSE)
 
-## Report
+A side-by-side study of three preference-learning approaches on the same
+dataset: a monotone-constrained gradient-boosted tree, a fully interpretable
+neural MCDA model (ANN-UTADIS), and a conventional deep MLP. All three are
+trained on identical splits and seeds; the report contrasts accuracy,
+class-wise behaviour, and interpretability — the deep MLP shines on the
+metric column, the ANN-UTADIS gives directly readable marginal utility
+functions and per-criterion class thresholds, and the monotone XGBoost is
+the practical middle ground.
 
-| File | Models | Role |
+## 📊 Dataset
+
+`data/lectures evaluation.csv` — 1,000 alternatives, four ordinal criteria
+$c_1, \dots, c_4$ on the grid $\{0, 0.25, 0.5, 0.75, 1.0\}$, and a quality
+class in $\{0, 1, 2, 3, 4\}$. The five raw classes are imbalanced (class 4
+holds only 27 samples), so they are merged into three:
+
+| Raw class | Merged class | Label |
 |---|---|---|
-| [notebooks/report.ipynb](notebooks/report.ipynb) | XGBoost (monotone), ANN-UTADIS, Deep MLP | Full project report — dataset, three models, sections 2.1 and 2.2 for each, final comparison |
-| [reports/report.html](reports/report.html) | — | HTML export of the notebook |
+| 0, 1 | 0 | low |
+| 2 | 1 | medium |
+| 3, 4 | 2 | high |
 
-All three models use the same dataset, the same class merging, and the same
-train/test split (`random_state = 1234`, 80/20 stratified). They are meant to
-be read in order.
+The processed dataset is stratified 80/20 with `random_state = 1234`.
 
-## Dataset
+## 🧠 Methodology
 
-`data/lectures evaluation.csv` — 1000 alternatives, 4 normalized criteria
-$(c_1, \dots, c_4)$ with ordinal values in $\{0, 0.25, 0.5, 0.75, 1.0\}$ and
-a quality class in $\{0, 1, 2, 3, 4\}$. The original 5 classes are imbalanced
-(class 4 has only 27 samples) so they are merged into three:
-$\{0, 1\} \to$ low, $\{2\} \to$ medium, $\{3, 4\} \to$ high.
+### 1. XGBoost with monotone constraints
 
-## Project layout
+A 100-tree, depth-3 booster fit with `monotone_constraints = (1, 1, 1, 1)`,
+enforcing that an increase in any criterion can only increase the predicted
+score. SHAP is used for both per-alternative explanations (waterfall plots
+on the chosen example alternatives) and global feature importance.
+
+### 2. ANN-UTADIS
+
+A small monotonic neural network implementing the additive value-function
+formulation
+
+$$U(a) = \sum_{j=1}^{m} u_j(g_j(a)),\quad \text{class}(a) = k \iff t_{k-1} \le U(a) < t_k$$
+
+with $L = 50$ hidden components per criterion. The marginal utility
+functions $u_j$ are read directly off the trained spread → leaky-hard-sigmoid →
+combine block in [`layers/`](layers/); the class thresholds $t_k$ are the
+learned parameters of the [`OrdinalThresholdLayer`](layers/threshold_layer.py).
+
+Anchoring $U(0) = 0$ and $U(1) = 1$ is done by wrapping `Uta` in a
+[`NormLayer`](layers/norm_layer.py); the ordinal layer is parameterised via
+cumulative softplus so the thresholds stay strictly ordered throughout
+training. The leaky-hard-sigmoid's slope is annealed linearly from $10^{-2}$
+to $3 \times 10^{-3}$, sharpening the marginal utility plateaus as training
+converges.
+
+### 3. Deep MLP
+
+A plain $4 \to 64 \to 32 \to 16 \to 3$ ReLU network with 0.2 dropout,
+trained with Adam at $5 \times 10^{-3}$ for up to 600 epochs. The interpretability
+analysis falls back to model-agnostic tools — permutation feature importance,
+partial dependence plots, SHAP on the logits.
+
+## 📁 Project Structure
 
 ```
 Project 2 - Preference Learning/
 ├── data/
-│   └── lectures evaluation.csv    # input dataset (no header)
-├── Instructions/
-│   ├── DA_preference_learning_project.pdf
-│   └── da-lec6-notes.pdf
-├── layers/                        # ANN-UTADIS PyTorch building blocks
+│   └── lectures evaluation.csv           # raw dataset (no header)
+├── layers/                               # ANN-UTADIS PyTorch building blocks
 │   ├── __init__.py
-│   ├── uta.py                     # additive value-function wrapper
-│   ├── monotonic_layer.py         # spread → activation → combine block
+│   ├── uta.py                            # comprehensive utility wrapper
+│   ├── monotonic_layer.py                # spread → activation → combine
 │   ├── criterion_layer_spread.py
 │   ├── criterion_layer_combine.py
 │   ├── leaky_hard_sigmoid.py
-│   ├── norm_layer.py              # U(0) = 0, U(1) = 1 anchoring
-│   └── threshold_layer.py         # binary + ordinal K-1 threshold layers
+│   ├── norm_layer.py                     # anchors U(0)=0, U(1)=1
+│   └── threshold_layer.py                # binary + ordinal K-1 thresholds
+├── src/                                  # importable training / explanation helpers
+│   ├── __init__.py
+│   ├── config.py                         # XgbConfig / AnnUtadisConfig / MlpConfig
+│   ├── training.py                       # generic train loop + early stopping
+│   └── explain.py                        # per-criterion contributions, min-change
 ├── notebooks/
-│   └── report.ipynb               # single consolidated report
+│   └── report.ipynb                      # consolidated comparison report
 ├── reports/
-│   └── report.html                # HTML export
+│   └── report.html                       # static HTML export
 ├── pyproject.toml
-├── uv.lock
-└── .python-version
+└── uv.lock
 ```
 
-## Running
+## 🚀 Setup
 
 ```bash
-uv sync                         # install all dependencies
-uv run jupyter lab              # open notebooks/report.ipynb
-```
-
-To export the report to a self-contained HTML file:
-
-```bash
+uv sync                                                       # install dependencies
+uv run jupyter lab                                            # open notebooks/report.ipynb
 uv run jupyter nbconvert --to html --output-dir reports notebooks/report.ipynb
 ```
 
-The notebook is runnable top-to-bottom from a clean kernel. All random seeds
-are pinned so metrics are reproducible.
+The notebook runs top-to-bottom from a clean kernel; random seeds are pinned
+so the reported metrics are reproducible.
 
-## What the report covers
+## 🏛️ Key Architecture Decisions
 
-The report is organized as four sections:
+- **Monotonicity by construction, not by penalty.** The ANN-UTADIS marginal
+  utility is monotonic in every criterion because the spread weights, the
+  activation, and the combine weights are each individually monotonic — no
+  monotonicity loss term or sign-constrained optimiser is needed.
+- **Cumulative-softplus thresholds instead of constrained optimisation.**
+  Ordering $t_1 < t_2 < \dots < t_{K-1}$ is enforced by parameterising each
+  gap as `softplus(raw)`. The thresholds are strictly ordered for any
+  real-valued `raw` vector, so the optimiser can use any unconstrained
+  gradient method.
+- **Temperature-controlled cumulative sigmoids.** Hard bucketise on the
+  thresholds gives non-differentiable predictions, which break SHAP and
+  AUC; the small `temperature` in [`OrdinalThresholdLayer`](layers/threshold_layer.py)
+  yields a sharp but differentiable distribution that `argmax`'s to the
+  same class as the hard rule.
+- **`src/` package is the library twin of the notebook.** Training loops,
+  SHAP setups, and the minimum-change analyses are duplicated in the
+  notebook on purpose — the report stays self-contained — but `src/` is the
+  reusable version of the same code, importable from other scripts.
 
-1. **Dataset** — loading, class merging, train/test split.
-2. **XGBoost with monotone constraints** — the interpretable ML baseline.
-3. **ANN-UTADIS** — a neural network with 50 hidden components per criterion,
-   cumulative-sigmoid ordinal thresholds, and a `NormLayer` that anchors
-   $U(0) = 0$ and $U(1) = 1$ so the learned marginal utility functions are
-   directly readable.
-4. **Deep MLP** — a plain $4 \to 64 \to 32 \to 16 \to 3$ ReLU network with
-   dropout and early stopping.
+## 📚 References
 
-Every model has the same sub-structure:
+- *Rank consistent ordinal regression for neural networks with application to age estimation* — Cao, Mirjalili, Raschka (2020). Pattern Recognition Letters. [arXiv:1901.07884](https://arxiv.org/abs/1901.07884)
+- *A Unified Approach to Interpreting Model Predictions* — Lundberg, Lee (2017). NeurIPS. [arXiv:1705.07874](https://arxiv.org/abs/1705.07874)
 
-- training + metrics (Accuracy, weighted F1, one-vs-rest AUC, rounded to four
-  decimal places);
-- confusion matrix + description;
-- **Section 2.1 — Decision explanation** for alternatives 574, 757 and 962:
-  per-criterion contributions (or SHAP waterfalls), minimum single-criterion
-  change — both analytical and empirical;
-- **Section 2.2 — Model interpretation**: criterion influence, nature
-  (gain / cost / non-monotonic), preference thresholds, indifference
-  regions, dependencies, and a post-hoc feature importance technique (PDP
-  and/or PFI);
-- short summary.
+## 📝 License
 
-The report ends with a comparison section that collects all three metric
-sets into one table, plots them side by side, and concludes on the accuracy
-vs interpretability trade-off.
+MIT — see [LICENSE](../LICENSE).

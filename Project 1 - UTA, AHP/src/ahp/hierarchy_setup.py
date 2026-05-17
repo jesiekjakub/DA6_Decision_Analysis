@@ -1,32 +1,32 @@
-# DM's hierarchy setup for the AHP model
+"""Static AHP hierarchy: categories, the criteria within each, and gain/cost directions."""
 
-CATEGORIES = ["Economic", "Social/Health", "Geography/Environment"]
+from __future__ import annotations
 
-CATEGORY_CRITERIA = {
+from typing import Final
+
+CATEGORIES: Final[list[str]] = ["Economic", "Social/Health", "Geography/Environment"]
+
+CATEGORY_CRITERIA: Final[dict[str, list[str]]] = {
     "Economic":              ["Employment rate", "Long-term unemployment rate", "Personal earnings"],
     "Social/Health":         ["Life expectancy", "Life satisfaction", "Employees working very long hours"],
     "Geography/Environment": ["Air pollution", "Distance from Poznan (km)"],
 }
 
-CRITERION_CATEGORY = {
-    crit: cat
-    for cat, crit_list in CATEGORY_CRITERIA.items()
-    for crit in crit_list
+CRITERION_CATEGORY: Final[dict[str, str]] = {
+    crit: cat for cat, crit_list in CATEGORY_CRITERIA.items() for crit in crit_list
 }
 
-CRITERIA = [
-    crit
-    for cat in CATEGORIES
-    for crit in CATEGORY_CRITERIA[cat]
+CRITERIA: Final[list[str]] = [
+    crit for cat in CATEGORIES for crit in CATEGORY_CRITERIA[cat]
 ]
 
-DIRECTIONS = {
-    "Employment rate":                   +1,  # gain
-    "Long-term unemployment rate":       -1,  # cost
-    "Personal earnings":                 +1,  # gain
-    "Life expectancy":                   +1,  # gain
-    "Life satisfaction":                 +1,  # gain
-    "Employees working very long hours": -1,  # cost
-    "Air pollution":                     -1,  # cost
-    "Distance from Poznan (km)":         -1,  # cost
+DIRECTIONS: Final[dict[str, int]] = {
+    "Employment rate":                   +1,
+    "Long-term unemployment rate":       -1,
+    "Personal earnings":                 +1,
+    "Life expectancy":                   +1,
+    "Life satisfaction":                 +1,
+    "Employees working very long hours": -1,
+    "Air pollution":                     -1,
+    "Distance from Poznan (km)":         -1,
 }

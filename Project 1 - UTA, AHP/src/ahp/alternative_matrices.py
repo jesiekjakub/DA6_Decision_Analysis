@@ -1,42 +1,37 @@
+"""Pairwise comparison matrices for alternatives, one per criterion.
+
+For each criterion the raw values are turned into a reciprocal Saaty matrix:
+the magnitude of each pairwise difference is mapped through the criterion's
+threshold table, and the sign of the (direction-adjusted) difference picks
+which side of the matrix gets the strong score.
+"""
+
+from __future__ import annotations
+
 import numpy as np
+import pandas as pd
+from numpy.typing import NDArray
+
 from ahp.hierarchy_setup import DIRECTIONS
+from ahp.thresholds import THRESHOLDS, diff_to_score
 
-# DM judgments are on a 1-9 Saaty scale
-THRESHOLDS = {
-    "Employment rate":                   [(2,1),(4,2),(6,3),(8,4),(10,5),(12,6),(16,7),(20,8)],
-    "Long-term unemployment rate":       [(0.5,1),(1.0,2),(2.0,3),(3.0,4),(4.0,5),(5.0,6),(6.0,7),(8.0,8)],
-    "Personal earnings":                 [(2000,1),(5000,2),(10000,3),(15000,4),(20000,5),(25000,6),(30000,7),(35000,8)],
-    "Life expectancy":                   [(0.5,1),(1.0,2),(2.0,3),(3.0,4),(4.0,5),(5.5,6),(6.5,7),(7.5,8)],
-    "Life satisfaction":                 [(0.1,1),(0.2,2),(0.4,3),(0.6,4),(0.8,5),(1.0,6),(1.2,7),(1.6,8)],
-    "Employees working very long hours": [(0.5,1),(1.5,2),(2.5,3),(3.5,4),(5.0,5),(6.5,6),(8.0,7),(9.5,8)],
-    "Air pollution":                     [(1.0,1),(2.0,2),(4.0,3),(6.0,4),(8.0,5),(10.0,6),(13.0,7),(16.0,8)],
-    "Distance from Poznan (km)":         [(100,1),(250,2),(450,3),(650,4),(900,5),(1200,6),(1600,7),(2000,8)],
-}
 
-def diff_to_score(abs_diff, thresholds):
-    # Mapping the absolute difference to AHP scores based on predefined thresholds
-    for upper, score in thresholds:
-        if abs_diff < upper:
-            return score
-    return 9
-
-def build_alternative_matrix(criterion, df):
-    # Build the pairwise comparison matrix for the alternatives
-    vals = df[criterion].values
+def build_alternative_matrix(
+    criterion: str, df: pd.DataFrame
+) -> NDArray[np.float64]:
+    """Construct the n×n reciprocal Saaty matrix for ``criterion``."""
+    vals = df[criterion].to_numpy()
     direction = DIRECTIONS[criterion]
-    thresh = THRESHOLDS[criterion]
+    table = THRESHOLDS[criterion]
     n = len(vals)
     A = np.ones((n, n), dtype=float)
 
     for i in range(n):
         for j in range(i + 1, n):
-            abs_diff = abs(vals[i] - vals[j])
-            score = diff_to_score(abs_diff, thresh)
+            score = diff_to_score(abs(vals[i] - vals[j]), table)
             signed_diff = (vals[i] - vals[j]) * direction
             if signed_diff > 0:
-                A[i, j] = score
-                A[j, i] = 1.0 / score
+                A[i, j], A[j, i] = score, 1.0 / score
             elif signed_diff < 0:
-                A[i, j] = 1.0 / score
-                A[j, i] = score
+                A[i, j], A[j, i] = 1.0 / score, score
     return A
